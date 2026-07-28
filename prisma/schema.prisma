@@ -1,0 +1,228 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../app/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model applications {
+  id                           String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  casting_call_id              String                   @db.Uuid
+  artist_id                    String                   @db.Uuid
+  director_id                  String                   @db.Uuid
+  role_id                      String?                  @db.Uuid
+  role_title                   String?                  @db.VarChar(200)
+  submitted_at                 DateTime                 @default(now()) @db.Timestamp(6)
+  source                       applications_source_enum @default(Direct_Link)
+  matching_percentage          Int                      @default(0)
+  matching_details             Json?                    @db.Json
+  matching_last_updated        DateTime?                @db.Timestamp(6)
+  original_matching_percentage Int?
+  status                       applications_status_enum @default(Submitted)
+  status_history               Json?                    @db.Json
+  director_notes               String?
+  rating                       Decimal?                 @db.Decimal(3, 2)
+  is_shortlisted               Boolean                  @default(false)
+  shortlisted_at               DateTime?                @db.Timestamp(6)
+  created_at                   DateTime                 @default(now()) @db.Timestamp(6)
+  updated_at                   DateTime                 @default(now()) @db.Timestamp(6)
+  withdrawn_at                 DateTime?                @db.Timestamp(6)
+  withdrawal_reason            String?                  @db.VarChar
+  artist_profiles              artist_profiles          @relation(fields: [artist_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  casting_calls                casting_calls            @relation(fields: [casting_call_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  director_profiles            director_profiles        @relation(fields: [director_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([casting_call_id, artist_id, role_id], map: "uq_applications_call_artist_role")
+  @@index([artist_id], map: "IDX_applications_artist_id")
+  @@index([casting_call_id], map: "IDX_applications_casting_call_id")
+  @@index([role_id], map: "IDX_applications_role_id")
+  @@index([status], map: "IDX_applications_status")
+  @@index([submitted_at], map: "IDX_applications_submitted_at")
+  @@index([casting_call_id, status, submitted_at(sort: Desc)], map: "idx_applications_casting_status_submitted")
+  @@index([director_id, status, submitted_at(sort: Desc)], map: "idx_applications_director_status")
+  @@index([casting_call_id, matching_percentage(sort: Desc)], map: "idx_applications_matching_percentage")
+}
+
+model artist_profiles {
+  id                   String                                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id              String                                 @unique @db.Uuid
+  full_name            String                                 @db.VarChar(255)
+  date_of_birth        DateTime?                              @db.Date
+  gender               artist_profiles_gender_enum?
+  height               Int?
+  weight               Int?
+  build                artist_profiles_build_enum?
+  skin_tone            String?                                @db.VarChar(50)
+  eye_color            String?                                @db.VarChar(50)
+  hair_color           String?                                @db.VarChar(50)
+  ethnicity            Json?                                  @db.Json
+  current_location     String?                                @db.VarChar(100)
+  state                String?                                @db.VarChar(100)
+  country              String?                                @db.VarChar(100)
+  available_locations  Json?
+  genre_preferences    Json?
+  language_preferences Json?
+  primary_language     String?                                @db.VarChar(100)
+  experience_level     artist_profiles_experience_level_enum?
+  years_of_experience  Int?
+  primary_category     artist_profiles_primary_category_enum?
+  specializations      Json?
+  bio                  String?
+  filmography          Json?                                  @db.Json
+  awards               Json?                                  @db.Json
+  portfolio            Json?                                  @db.Json
+  profile_completion   Int                                    @default(0)
+  is_active            Boolean                                @default(true)
+  created_at           DateTime                               @default(now()) @db.Timestamp(6)
+  updated_at           DateTime                               @default(now()) @db.Timestamp(6)
+  search_document      String?
+  embedding            Unsupported("vector")?
+  search_tsv           Unsupported("tsvector")?               @default(dbgenerated("to_tsvector('english'::regconfig, COALESCE(search_document, ''::text))"))
+  applications         applications[]
+  users                users                                  @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  role_match_scores    role_match_scores[]
+
+  @@index([user_id], map: "IDX_artist_profiles_user_id")
+  @@index([date_of_birth], map: "idx_artist_profiles_age_years", where: raw("(date_of_birth IS NOT NULL)"))
+  @@index([available_locations], map: "idx_artist_profiles_available_locations", type: Gin)
+  @@index([profile_completion, is_active], map: "idx_artist_profiles_completion")
+  @@index([gender, date_of_birth], map: "idx_artist_profiles_gender_age", where: raw("(is_active = true)"))
+  @@index([genre_preferences], map: "idx_artist_profiles_genre_preferences", type: Gin)
+  @@index([height], map: "idx_artist_profiles_height")
+  @@index([language_preferences], map: "idx_artist_profiles_languages", type: Gin)
+  @@index([full_name(ops: raw("gin_trgm_ops"))], map: "idx_artist_profiles_name_trgm", type: Gin)
+  @@index([search_tsv], map: "idx_artist_profiles_search_tsv", type: Gin)
+  @@index([specializations], map: "idx_artist_profiles_specializations", type: Gin)
+}
+
+model casting_calls {
+  id                   String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  director_id          String                    @db.Uuid
+  title                String                    @db.VarChar(200)
+  movie_name           String?                   @db.VarChar(200)
+  project_type         String?                   @db.VarChar(100)
+  description          String?
+  genre                Json?                     @db.Json
+  languages            Json?                     @db.Json
+  requirements         Json?                     @db.Json
+  roles                Json?                     @db.Json
+  status               casting_calls_status_enum @default(published)
+  is_active            Boolean                   @default(true)
+  published_at         DateTime?                 @db.Timestamp(6)
+  application_deadline DateTime                  @db.Timestamp(6)
+  application_count    Int                       @default(0)
+  created_at           DateTime                  @default(now()) @db.Timestamp(6)
+  deleted_at           DateTime?                 @db.Timestamp(6)
+  suspended_at         DateTime?                 @db.Timestamp(6)
+  applications         applications[]
+  director_profiles    director_profiles         @relation(fields: [director_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  role_match_scores    role_match_scores[]
+}
+
+model director_profiles {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String          @unique @db.Uuid
+  full_name     String?         @db.VarChar(255)
+  company_name  String?         @db.VarChar(255)
+  city          String?         @db.VarChar(100)
+  is_active     Boolean         @default(true)
+  created_at    DateTime        @default(now()) @db.Timestamp(6)
+  applications  applications[]
+  casting_calls casting_calls[]
+  users         users           @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model role_match_scores {
+  id                     String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  artist_id              String          @db.Uuid
+  casting_call_id        String          @db.Uuid
+  role_id                String          @db.Uuid
+  matching_percentage    Int             @default(0)
+  matching_details       Json?           @db.Json
+  calculated_at          DateTime        @default(now()) @db.Timestamp(6)
+  artist_profile_version DateTime?       @db.Timestamp(6)
+  artist_profiles        artist_profiles @relation(fields: [artist_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  casting_calls          casting_calls   @relation(fields: [casting_call_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([artist_id, casting_call_id, role_id], map: "uq_role_match_artist_call_role")
+  @@index([artist_id, casting_call_id, role_id], map: "IDX_role_match_scores_artist_casting_call_role")
+  @@index([artist_id], map: "IDX_role_match_scores_artist_id")
+}
+
+model users {
+  id                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                 String             @unique @db.VarChar(255)
+  user_type             String             @db.VarChar(32)
+  is_verified           Boolean            @default(true)
+  suspended_at          DateTime?          @db.Timestamp(6)
+  deactivated_at        DateTime?          @db.Timestamp(6)
+  scheduled_deletion_at DateTime?          @db.Timestamp(6)
+  created_at            DateTime           @default(now()) @db.Timestamp(6)
+  updated_at            DateTime           @default(now()) @db.Timestamp(6)
+  artist_profiles       artist_profiles?
+  director_profiles     director_profiles?
+}
+
+enum applications_source_enum {
+  Landing_Page @map("Landing Page")
+  QR_Code      @map("QR Code")
+  Direct_Link  @map("Direct Link")
+  Notification
+}
+
+enum applications_status_enum {
+  Submitted
+  Viewed
+  Shortlisted
+  Rejected
+  Selected
+}
+
+enum artist_profiles_build_enum {
+  Slim
+  Average
+  Athletic
+  Muscular
+  Plus_size @map("Plus-size")
+  Petite
+}
+
+enum artist_profiles_experience_level_enum {
+  Beginner
+  Intermediate
+  Professional
+  Expert
+  Veteran
+}
+
+enum artist_profiles_gender_enum {
+  Male
+  Female
+  Non_binary        @map("Non-binary")
+  Other
+  Prefer_not_to_say @map("Prefer not to say")
+}
+
+enum artist_profiles_primary_category_enum {
+  Actor
+  Singer
+  Dancer
+  Model
+  Voice_Artist @map("Voice Artist")
+  Writer
+  Director
+  Photographer
+  Camera_Crew  @map("Camera Crew")
+  Editor
+  Other
+}
+
+enum casting_calls_status_enum {
+  draft
+  published
+  closed
+  cancelled
+}

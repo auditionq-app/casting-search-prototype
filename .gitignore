@@ -1,41 +1,42 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Dependencies
+node_modules/
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+# Environment / secrets
+.env
+.env.local
+.env.*.local
 
-# testing
-/coverage
+# Next.js
+.next/
+out/
 
-# next.js
-/.next/
-/out/
+# Build output
+dist/
+build/
 
-# production
-/build
+# Prisma
+# (keep schema.prisma tracked, but not generated client artifacts if any live outside node_modules)
 
-# misc
-.DS_Store
-*.pem
+# Docker
+docker-compose.override.yml
 
-# debug
+# Logs
+*.log
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# OS
+.DS_Store
+Thumbs.db
 
-# vercel
-.vercel
+# Editor
+.vscode/*
+!.vscode/settings.json
+.idea/
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# Local model files (if any get downloaded outside Docker/Ollama's own storage)
+*.gguf
+*.bin
+
+# Baseline raw output (keep the summarized phase0-baseline.md, not the raw dump, if it's large)
+docs/phase0-baseline-raw.txt
+/app/generated/prisma
