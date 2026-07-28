@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: director-applicant-rd-postgres
+    restart: unless-stopped
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: director_applicant_rd
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - director_applicant_rd_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d director_applicant_rd"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  director_applicant_rd_data:
