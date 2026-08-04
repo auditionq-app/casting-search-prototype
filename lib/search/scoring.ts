@@ -6,19 +6,19 @@ import { embedText } from "../embeddings/embedder";
 
 export interface CandidateScore {
   id: string;
-  // Raw values, kept for debugging/tuning (per AGENT-LOCAL.md Phase 8:
-  // "Expect to tune weights by eye against real results")
   rawCosineSimilarity: number;
-  rawTsRank: number;
-  // Normalized 0-1 within this candidate set — what Phase 8 will combine.
+  rawTsRankSemantic: number;
+  rawTsRankTraits: number;
   vectorScore: number;
   lexicalScore: number;
+  softMatchScore: number;
 }
 
 interface RawScoreRow {
   id: string;
   cosine_similarity: number;
-  ts_rank: number;
+  ts_rank_semantic: number;
+  ts_rank_traits: number;
 }
 
 // Min-max normalize a list of numbers to [0, 1]. If all values are equal,
@@ -59,40 +59,51 @@ function buildOrTsQuery(semanticQuery: string): Prisma.Sql {
 }
 
 // Scores a bounded candidate set (from Phase 6's getCandidateIds) against
-// semantic_query, via cosine similarity (pgvector) and lexical rank
-// (search_tsv). Both signals are computed in a single SQL round-trip, then
-// normalized in application code — min-max within THIS candidate set,
-// rather than assuming fixed bounds, since ts_rank's scale varies with
-// query complexity and candidate composition.
+// three signals: cosine similarity (vector), ts_rank against semantic_query
+// (lexical), and ts_rank against soft_preferences.traits (soft match) —
+// all normalized min-max within this candidate set. Phase 8 combines these
+// three into a final weighted score.
 export async function scoreCandidates(
   candidateIds: string[],
-  semanticQuery: string
+  semanticQuery: string,
+  traits: string[] = []
 ): Promise<CandidateScore[]> {
   if (candidateIds.length === 0) return [];
 
   const queryEmbedding = await embedText(semanticQuery);
   const vectorLiteral = `[${queryEmbedding.join(",")}]`;
 
+  // traits joined into one space-separated string, then OR-tsquery'd the
+  // same way as semantic_query — an empty traits list naturally produces
+  // an empty tsquery, which ts_rank's against as 0 for every row (a flat,
+  // harmless contribution that doesn't distort relative ranking).
+  const traitsText = traits.join(" ");
+
   const rows = await prisma.$queryRaw<RawScoreRow[]>(Prisma.sql`
     SELECT
       id,
       1 - (embedding <=> ${vectorLiteral}::vector) AS cosine_similarity,
-      ts_rank(search_tsv, ${buildOrTsQuery(semanticQuery)}) AS ts_rank
+      ts_rank(search_tsv, ${buildOrTsQuery(semanticQuery)}) AS ts_rank_semantic,
+      ts_rank(search_tsv, ${buildOrTsQuery(traitsText)}) AS ts_rank_traits
     FROM artist_profiles
     WHERE id = ANY(${candidateIds}::uuid[])
   `);
 
   const cosineValues = rows.map((r) => r.cosine_similarity);
-  const tsRankValues = rows.map((r) => r.ts_rank);
+  const semanticRankValues = rows.map((r) => r.ts_rank_semantic);
+  const traitsRankValues = rows.map((r) => r.ts_rank_traits);
 
   const normalizedVector = minMaxNormalize(cosineValues);
-  const normalizedLexical = minMaxNormalize(tsRankValues);
+  const normalizedLexical = minMaxNormalize(semanticRankValues);
+  const normalizedSoftMatch = minMaxNormalize(traitsRankValues);
 
   return rows.map((row, i) => ({
     id: row.id,
     rawCosineSimilarity: row.cosine_similarity,
-    rawTsRank: row.ts_rank,
+    rawTsRankSemantic: row.ts_rank_semantic,
+    rawTsRankTraits: row.ts_rank_traits,
     vectorScore: normalizedVector[i],
     lexicalScore: normalizedLexical[i],
+    softMatchScore: normalizedSoftMatch[i],
   }));
 }
