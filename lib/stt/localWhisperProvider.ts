@@ -11,6 +11,12 @@ export class LocalWhisperProvider implements SpeechToTextProvider {
       },
     });
 
-    return { text: result.trim() };
+    const text = result.trim();
+
+    if (!text || text.includes("[BLANK_AUDIO]")) {
+      return { text: "" };
+    }
+
+    return { text };
   }
 }

@@ -21,6 +21,14 @@ export async function POST(req: Request) {
   try {
     await convertToWav(inputPath, wavPath);
     const { text } = await sttProvider.transcribe(wavPath);
+
+    if (!text.trim()) {
+      return Response.json(
+        { error: "No speech detected" },
+        { status: 400 }
+      );
+    }
+
     return Response.json({ text });
   } catch (err) {
     console.error("Transcription failed:", err);
@@ -29,7 +37,7 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   } finally {
-    await unlink(inputPath).catch(() => {});
-    await unlink(wavPath).catch(() => {});
+    await unlink(inputPath).catch(() => { });
+    await unlink(wavPath).catch(() => { });
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 interface SearchResult {
   id: string;
@@ -31,12 +31,16 @@ interface SearchResponse {
 export default function SearchPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SearchResponse | null>(null);
 
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!query.trim()) return;
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  async function search(queryText: string) {
+    if (!queryText.trim()) return;
 
     setLoading(true);
     setError(null);
@@ -45,7 +49,7 @@ export default function SearchPage() {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query: queryText }),
       });
 
       if (!res.ok) {
@@ -62,11 +66,115 @@ export default function SearchPage() {
     }
   }
 
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    await search(query);
+  }
+
+  async function startRecording() {
+    try {
+      setError(null);
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+
+      const recorder = new MediaRecorder(stream);
+
+      chunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = handleRecordingStop;
+
+      recorder.start();
+
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+    } catch (err) {
+      console.error("Microphone access failed:", err);
+
+      setError(
+        "Microphone access was denied or unavailable. Please allow microphone access and try again."
+      );
+
+      setRecording(false);
+    }
+  }
+
+  function stopRecording() {
+    mediaRecorderRef.current?.stop();
+    setRecording(false);
+  }
+
+  async function handleRecordingStop() {
+    const blob = new Blob(chunksRef.current, {
+      type: "audio/webm",
+    });
+
+    if (blob.size === 0) {
+      setError("No audio was recorded. Please try again.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("audio", blob, "query.webm");
+
+    setTranscribing(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+
+      const responseData = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          responseData.error ?? `Transcription failed: ${res.status}`
+        );
+      }
+
+      if (!responseData.text?.trim()) {
+        throw new Error("No speech was detected. Please try again.");
+      }
+
+      const transcribedText = responseData.text.trim();
+
+      setQuery(transcribedText);
+      await search(transcribedText);
+    } catch (err) {
+      console.error("Voice search failed:", err);
+
+      setError(
+        err instanceof Error ? err.message : "Voice search failed"
+      );
+    } finally {
+      setTranscribing(false);
+      mediaRecorderRef.current = null;
+    }
+  }
+
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", padding: "2rem 1rem" }}>
-      <h1 style={{ fontSize: "1.5rem", marginBottom: "1rem" }}>Actor Search</h1>
+      <h1 style={{ fontSize: "1.5rem", marginBottom: "1rem" }}>
+        Actor Search
+      </h1>
 
-      <form onSubmit={handleSearch} style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
+      <form
+        onSubmit={handleSearch}
+        style={{
+          display: "flex",
+          gap: "0.5rem",
+          marginBottom: "1.5rem",
+        }}
+      >
         <input
           type="text"
           value={query}
@@ -80,17 +188,43 @@ export default function SearchPage() {
             fontSize: "1rem",
           }}
         />
+
+        <button
+          type="button"
+          onClick={recording ? stopRecording : startRecording}
+          aria-label={
+            recording ? "Stop recording" : "Start voice search"
+          }
+          disabled={transcribing || loading}
+          style={{
+            padding: "0.5rem 0.75rem",
+            borderRadius: 6,
+            border: "1px solid #ccc",
+            background: "#fff",
+            cursor:
+              transcribing || loading ? "default" : "pointer",
+            opacity: transcribing || loading ? 0.6 : 1,
+          }}
+        >
+          {recording
+            ? "● Stop"
+            : transcribing
+              ? "Transcribing..."
+              : "🎤"}
+        </button>
+
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || transcribing}
           style={{
             padding: "0.5rem 1.25rem",
             borderRadius: 6,
             border: "none",
             background: "#111",
             color: "#fff",
-            cursor: loading ? "default" : "pointer",
-            opacity: loading ? 0.6 : 1,
+            cursor:
+              loading || transcribing ? "default" : "pointer",
+            opacity: loading || transcribing ? 0.6 : 1,
           }}
         >
           {loading ? "Searching..." : "Search"}
@@ -101,15 +235,31 @@ export default function SearchPage() {
 
       {data && (
         <>
-          <div style={{ fontSize: "0.85rem", color: "#666", marginBottom: "1rem" }}>
+          <div
+            style={{
+              fontSize: "0.85rem",
+              color: "#666",
+              marginBottom: "1rem",
+            }}
+          >
             {data.totalCandidates} candidates after filters ·{" "}
             semantic query: &quot;{data.parsed.semantic_query}&quot;
             {data.parsed.soft_preferences.traits?.length ? (
-              <> · traits: {data.parsed.soft_preferences.traits.join(", ")}</>
+              <>
+                {" "}
+                · traits:{" "}
+                {data.parsed.soft_preferences.traits.join(", ")}
+              </>
             ) : null}
           </div>
 
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          <ul
+            style={{
+              listStyle: "none",
+              padding: 0,
+              margin: 0,
+            }}
+          >
             {data.results.map((r) => (
               <li
                 key={r.id}
@@ -118,20 +268,44 @@ export default function SearchPage() {
                   borderBottom: "1px solid #eee",
                 }}
               >
-                <div style={{ fontWeight: 600 }}>{r.full_name}</div>
-                <div style={{ fontSize: "0.9rem", color: "#333" }}>
+                <div style={{ fontWeight: 600 }}>
+                  {r.full_name}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: "0.9rem",
+                    color: "#333",
+                  }}
+                >
                   {[r.primary_category, r.experience_level, r.location]
                     .filter(Boolean)
                     .join(" · ")}
                 </div>
+
                 {r.bio && (
-                  <div style={{ fontSize: "0.9rem", color: "#555", marginTop: "0.25rem" }}>
+                  <div
+                    style={{
+                      fontSize: "0.9rem",
+                      color: "#555",
+                      marginTop: "0.25rem",
+                    }}
+                  >
                     {r.bio}
                   </div>
                 )}
-                <div style={{ fontSize: "0.75rem", color: "#999", marginTop: "0.25rem" }}>
-                  final: {r.finalScore.toFixed(3)} (vector: {r.vectorScore.toFixed(3)}, lexical:{" "}
-                  {r.lexicalScore.toFixed(3)}, softMatch: {r.softMatchScore.toFixed(3)})
+
+                <div
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#999",
+                    marginTop: "0.25rem",
+                  }}
+                >
+                  final: {r.finalScore.toFixed(3)} (vector:{" "}
+                  {r.vectorScore.toFixed(3)}, lexical:{" "}
+                  {r.lexicalScore.toFixed(3)}, softMatch:{" "}
+                  {r.softMatchScore.toFixed(3)})
                 </div>
               </li>
             ))}
