@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface SearchResult {
   id: string;
@@ -37,7 +37,22 @@ export default function SearchPage() {
   const [data, setData] = useState<SearchResponse | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+
+  function releaseMediaStream() {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+  }
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      releaseMediaStream();
+    };
+  }, []);
 
   async function search(queryText: string) {
     if (!queryText.trim()) return;
@@ -75,10 +90,15 @@ export default function SearchPage() {
     try {
       setError(null);
 
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        throw new Error("Voice recording is not supported by this browser.");
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
 
+      mediaStreamRef.current = stream;
       const recorder = new MediaRecorder(stream);
 
       chunksRef.current = [];
@@ -97,9 +117,12 @@ export default function SearchPage() {
       setRecording(true);
     } catch (err) {
       console.error("Microphone access failed:", err);
+      releaseMediaStream();
 
       setError(
-        "Microphone access was denied or unavailable. Please allow microphone access and try again."
+        err instanceof Error && err.message.includes("not supported")
+          ? err.message
+          : "Microphone access was denied or unavailable. Please allow microphone access and try again."
       );
 
       setRecording(false);
@@ -112,6 +135,8 @@ export default function SearchPage() {
   }
 
   async function handleRecordingStop() {
+    releaseMediaStream();
+
     const blob = new Blob(chunksRef.current, {
       type: "audio/webm",
     });
