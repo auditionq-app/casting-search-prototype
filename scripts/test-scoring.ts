@@ -39,7 +39,7 @@ async function main() {
     console.log(
       `${nameMap.get(c.id)} — vector: ${c.vectorScore.toFixed(3)} (raw cos: ${c.rawCosineSimilarity.toFixed(
         3
-      )}), lexical: ${c.lexicalScore.toFixed(3)} (raw ts_rank: ${c.rawTsRank.toFixed(4)})`
+      )}), lexical: ${c.lexicalScore.toFixed(3)} (raw ts_rank: ${c.rawTsRankSemantic.toFixed(4)})`
     );
   }
 }

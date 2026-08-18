@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { useVoiceSearch } from "@/components/search/useVoiceSearch";
 
 interface SearchResult {
   id: string;
@@ -34,9 +35,8 @@ export default function SearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SearchResponse | null>(null);
 
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!query.trim()) return;
+  const runSearch = useCallback(async (searchQuery: string) => {
+    if (!searchQuery.trim()) return;
 
     setLoading(true);
     setError(null);
@@ -45,7 +45,7 @@ export default function SearchPage() {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query: searchQuery }),
       });
 
       if (!res.ok) {
@@ -60,13 +60,31 @@ export default function SearchPage() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    runSearch(query);
   }
+
+  const {
+    isListening,
+    isSupported,
+    error: voiceError,
+    startListening,
+    stopListening,
+  } = useVoiceSearch({
+    onResult: (transcript) => {
+      setQuery(transcript);
+      runSearch(transcript);
+    },
+  });
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", padding: "2rem 1rem" }}>
       <h1 style={{ fontSize: "1.5rem", marginBottom: "1rem" }}>Actor Search</h1>
 
-      <form onSubmit={handleSearch} style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
+      <form onSubmit={handleSearch} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
         <input
           type="text"
           value={query}
@@ -80,6 +98,23 @@ export default function SearchPage() {
             fontSize: "1rem",
           }}
         />
+        <button
+          type="button"
+          onClick={isListening ? stopListening : startListening}
+          disabled={!isSupported}
+          title={!isSupported ? "Voice search requires Chrome or Edge" : undefined}
+          style={{
+            padding: "0.5rem 0.75rem",
+            borderRadius: 6,
+            border: "1px solid #ccc",
+            background: isListening ? "#fee2e2" : "#f5f5f5",
+            cursor: isSupported ? "pointer" : "not-allowed",
+            opacity: isSupported ? 1 : 0.5,
+            fontSize: "1rem",
+          }}
+        >
+          {isListening ? "● Listening..." : "🎤"}
+        </button>
         <button
           type="submit"
           disabled={loading}
@@ -96,6 +131,10 @@ export default function SearchPage() {
           {loading ? "Searching..." : "Search"}
         </button>
       </form>
+
+      {voiceError && (
+        <p style={{ color: "crimson", fontSize: "0.85rem", marginBottom: "1rem" }}>{voiceError}</p>
+      )}
 
       {error && <p style={{ color: "crimson" }}>{error}</p>}
 
