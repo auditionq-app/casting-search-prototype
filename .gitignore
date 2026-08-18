@@ -40,3 +40,26 @@ Thumbs.db
 # Baseline raw output (keep the summarized phase0-baseline.md, not the raw dump, if it's large)
 docs/phase0-baseline-raw.txt
 /app/generated/prisma
+
+.idea
+.vscode
+.bash_profile
+.bashrc
+.zprofile
+.zshrc
+.gitconfig
+.profile
+.ripgreprc
+.mcp.json
+.claude/
+.idea
+.vscode
+.bash_profile
+.bashrc
+.zprofile
+.zshrc
+.gitconfig
+.profile
+.ripgreprc
+.mcp.json
+.claude/
